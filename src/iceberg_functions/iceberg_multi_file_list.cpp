@@ -401,6 +401,10 @@ optional_ptr<const IcebergManifestEntry> IcebergMultiFileList::GetDataFile(idx_t
 }
 
 OpenFileInfo IcebergMultiFileList::GetFileInternal(idx_t file_id, lock_guard<mutex> &guard) {
+	if (file_id == 0) {
+		return OpenFileInfo("");
+	}
+
 	if (!initialized) {
 		InitializeFiles(guard);
 	}
