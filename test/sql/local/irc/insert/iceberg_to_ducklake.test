@@ -16,8 +16,6 @@ require ducklake
 # Do not ignore 'HTTP' error messages!
 set ignore_error_messages
 
-mode skip
-
 statement ok
 set enable_logging=true
 
@@ -33,7 +31,6 @@ CREATE SECRET (
     URL_STYLE 'path',
     USE_SSL 0
 );
-
 
 statement ok
 ATTACH '' AS my_datalake (
