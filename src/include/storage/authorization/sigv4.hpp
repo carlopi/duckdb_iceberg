@@ -19,12 +19,19 @@ public:
 	                                 const IRCEndpointBuilder &endpoint_builder, HTTPHeaders &headers,
 	                                 const string &data = "") override;
 
+	void SetClient(unique_ptr<HTTPClient> && client_) {
+		client = std::move(client_);
+	}
+	unique_ptr<HTTPClient> & GetClient() {
+		return client;
+	}
 private:
 	AWSInput CreateAWSInput(ClientContext &context, const IRCEndpointBuilder &endpoint_builder);
 
 public:
 	string secret;
 	string region;
+	unique_ptr<HTTPClient> client;
 };
 
 } // namespace duckdb
