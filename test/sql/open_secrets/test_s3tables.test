@@ -1,0 +1,26 @@
+# name: test/sql/cloud/test_s3tables.test
+# description: test integration with S3tables via secret made open
+# group: [cloud]
+
+require httpfs
+
+require avro
+
+require parquet
+
+require iceberg
+
+statement ok
+CREATE OR REPLACE SECRET __my_secret__ (TYPE s3, KEY_ID 'AKIATZA7ONMDIDVQ3VQF', SECRET 'uTnMIh0QVLC36Dbsp1fIQiqsRJloqSq8nnj6naty');
+
+statement ok
+ATTACH IF NOT EXISTS 'arn:aws:s3tables:us-east-1:259911478022:bucket/test' AS __my_resource__ (TYPE iceberg, ENDPOINT_TYPE 's3_tables');
+
+statement ok
+CREATE OR REPLACE VIEW __my_view__ AS FROM __my_resource__.test_schema.test_table;
+
+uery II
+FROM __my_view__ OFFSET 0 LIMIT 1;
+----
+quack  duck
+
