@@ -1,0 +1,186 @@
+# name: test/sql/local/catalog_custom_setup/fixture/main_namespace.test
+# description: 'main' is a namespace like any other - it is not aliased to the catalog's default
+#              namespace, and the default namespace is not reachable under the name 'main'
+# group: [fixture]
+
+require-env FIXTURE_SERVER_AVAILABLE
+
+require avro
+
+require parquet
+
+require iceberg
+
+require httpfs
+
+# Do not ignore 'HTTP' error messages!
+set ignore_error_messages
+
+statement ok
+CREATE SECRET storage_secret(
+	TYPE S3,
+	KEY_ID 'admin',
+	SECRET 'password',
+	ENDPOINT '127.0.0.1:9000',
+	URL_STYLE 'path',
+	USE_SSL 0
+);
+
+statement ok
+CREATE SECRET iceberg_secret (
+	TYPE ICEBERG,
+	CLIENT_ID 'admin',
+	CLIENT_SECRET 'password',
+	URI 'http://127.0.0.1:8181'
+);
+
+statement ok
+ATTACH '' AS my_datalake (
+	TYPE ICEBERG,
+	SECRET iceberg_secret
+);
+
+statement ok
+CREATE SCHEMA IF NOT EXISTS my_datalake.main;
+
+statement ok
+DROP TABLE IF EXISTS my_datalake.main.in_main;
+
+statement ok
+DROP TABLE IF EXISTS my_datalake.default.in_default;
+
+statement ok
+CREATE TABLE my_datalake.main.in_main AS SELECT 42 AS a;
+
+# unqualified: the default namespace is 'default', not 'main'
+statement ok
+CREATE TABLE my_datalake.in_default AS SELECT 43 AS a;
+
+query I
+SELECT a FROM my_datalake.main.in_main;
+----
+42
+
+query I
+SELECT a FROM my_datalake.default.in_default;
+----
+43
+
+# each table lives in exactly one namespace - neither name resolves to the other
+statement error
+SELECT a FROM my_datalake.default.in_main;
+----
+<REGEX>:.*in_main.*
+
+statement error
+SELECT a FROM my_datalake.main.in_default;
+----
+<REGEX>:.*in_default.*
+
+# DEFAULT_SCHEMA 'main' makes 'main' the default, still without any aliasing
+statement ok
+DETACH my_datalake;
+
+statement ok
+ATTACH '' AS my_datalake (
+	TYPE ICEBERG,
+	SECRET iceberg_secret,
+	DEFAULT_SCHEMA 'main'
+);
+
+statement ok
+USE my_datalake
+
+query I
+SELECT current_schema()
+----
+main
+
+query I
+SELECT a FROM my_datalake.in_main;
+----
+42
+
+query I
+SELECT a FROM my_datalake.default.in_default;
+----
+43
+
+statement ok
+USE memory
+
+# the case where the old alias fired unconditionally: a default namespace that is neither
+# 'main' nor 'default'. 'bronze' has to exist before it can be named as DEFAULT_SCHEMA.
+statement ok
+DETACH my_datalake;
+
+statement ok
+ATTACH '' AS my_datalake (
+	TYPE ICEBERG,
+	SECRET iceberg_secret
+);
+
+statement ok
+CREATE SCHEMA IF NOT EXISTS my_datalake.bronze;
+
+statement ok
+DROP TABLE IF EXISTS my_datalake.bronze.T;
+
+statement ok
+DROP TABLE IF EXISTS my_datalake.main.T;
+
+statement ok
+DETACH my_datalake;
+
+statement ok
+ATTACH '' AS my_datalake (
+	TYPE ICEBERG,
+	SECRET iceberg_secret,
+	DEFAULT_SCHEMA 'bronze'
+);
+
+# before: neither name resolves to a table
+statement error
+SELECT * FROM my_datalake.bronze.T;
+----
+<REGEX>:.*does not exist.*
+
+statement error
+SELECT * FROM my_datalake.main.T;
+----
+<REGEX>:.*does not exist.*
+
+statement ok
+CREATE TABLE my_datalake.main.T AS SELECT 42;
+
+# after: the table exists in 'main', as written
+query I
+SELECT * FROM my_datalake.main.T;
+----
+42
+
+# and ONLY there - it did not also appear in the default namespace. This is the assertion that
+# goes red without the fix, where 'main' was an alias for the default namespace and both names
+# resolved to the same table.
+statement error
+SELECT * FROM my_datalake.bronze.T;
+----
+<REGEX>:.*does not exist.*
+
+statement ok
+DROP TABLE my_datalake.main.T;
+
+statement ok
+DROP TABLE my_datalake.main.in_main;
+
+statement ok
+DROP TABLE my_datalake.default.in_default;
+
+statement ok
+DETACH my_datalake;
+
+statement ok
+DROP SECRET iceberg_secret;
+
+statement ok
+DROP SECRET storage_secret;
