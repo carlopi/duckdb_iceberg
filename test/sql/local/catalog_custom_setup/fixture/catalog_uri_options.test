@@ -43,10 +43,17 @@ ATTACH '' AS my_datalake (
 	SECRET iceberg_secret
 );
 
-statement error
+# without DEFAULT_SCHEMA the attach resolves unqualified names to the 'default' namespace
+statement ok
 use my_datalake
+
+query I
+SELECT current_schema()
 ----
-<REGEX>:.*No catalog.*
+default
+
+statement ok
+use memory
 
 statement ok
 DETACH my_datalake

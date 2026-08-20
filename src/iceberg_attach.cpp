@@ -201,7 +201,11 @@ unique_ptr<Catalog> IcebergAttach::Attach(optional_ptr<StorageExtensionInfo> sto
 	attach_options.name = name;
 
 	// check if we have a secret provided
-	Identifier default_schema;
+	// The namespace unqualified names resolve to. Iceberg defines no default namespace, but 'default' is
+	// the name the ecosystem settled on - defaulting to it makes `USE <db>` and `CREATE TABLE <db>.t` work
+	// out of the box. Pass DEFAULT_SCHEMA '' to attach without one.
+	Identifier default_schema("default");
+	bool explicit_default_schema = false;
 	string endpoint_type_string;
 	string authorization_type_string;
 	string access_mode_string;
@@ -248,6 +252,7 @@ unique_ptr<Catalog> IcebergAttach::Attach(optional_ptr<StorageExtensionInfo> sto
 			set_by_attach_options.insert("purge_requested");
 		} else if (lower_name == "default_schema") {
 			default_schema = Identifier(entry.second.ToString());
+			explicit_default_schema = true;
 		} else if (lower_name == "encode_entire_prefix") {
 			attach_options.encode_entire_prefix = true;
 		} else if (lower_name == "max_table_staleness") {
@@ -351,7 +356,10 @@ unique_ptr<Catalog> IcebergAttach::Attach(optional_ptr<StorageExtensionInfo> sto
 	//! Remember the normalized attach options so that a later ATTACH OR REPLACE can detect when they change.
 	catalog->SetAttachOptions(options.options);
 	catalog->GetConfig(context, endpoint_type);
-	if (!default_schema.empty() &&
+	// Only a namespace the user asked for is verified here. The implicit default is resolved lazily, so
+	// attaching a catalog that has no 'default' namespace keeps working for fully qualified names, and only
+	// unqualified reads and writes fail - naming the namespace they could not resolve.
+	if (explicit_default_schema && !default_schema.empty() &&
 	    !IRCAPI::VerifySchemaExistence(context, *catalog, default_schema.GetIdentifierName())) {
 		throw InvalidConfigurationException("default_schema '%s' does not exist", default_schema);
 	}
